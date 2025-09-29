@@ -12,7 +12,7 @@ exports.createBlog = async (req, res) => {
       tags,
       category,
       thumbnail,
-      author: req.user.id, // from verifyToken middleware
+      author: req.user.id, // from verifyToken middleware 
     });
 
     res.status(201).json({ message: "Blog created successfully", blog });
