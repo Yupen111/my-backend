@@ -1,0 +1,147 @@
+const mongoose = require("mongoose"); 
+const Cart = require("../models/Cart");
+const Book = require("../models/Book");
+
+
+// helper function
+function getCartIdentifier(req) {
+  // ✅ Logged-in user (JWT)
+  
+  if (req.user && req.user.id) {
+    return { user: new mongoose.Types.ObjectId(req.user.id) };
+  }
+  
+
+  // ✅ Guest user (session id)
+  const sessionId = req.headers["x-session-id"];
+  // if (!sessionId) throw new Error("Session ID required for guest");
+  return { sessionId };
+}
+
+
+// ➕ Add item
+exports.addItem = async (req, res) => {
+  try {
+    const { productId, quantity } = req.body;    
+    const identifier = getCartIdentifier(req);
+    
+    
+    const book = await Book.findById(productId);
+    if (!book) return res.status(404).json({ message: "Product not found" });
+
+    let cart = await Cart.findOne(identifier);
+    if (!cart) cart = new Cart({ ...identifier, items: [] });
+
+    const existingItem = cart.items.find((i) => i.product.toString() === productId);
+
+    if (existingItem) {
+      existingItem.quantity += quantity;
+      existingItem.price = book.price * existingItem.quantity;
+    } else {
+      cart.items.push({
+        product: productId,
+        quantity,
+        price: book.price * quantity,
+      });
+    }
+
+    await cart.save();
+    res.json({ message: "Item added", cart });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+// 📂 Get cart
+exports.getCart = async (req, res) => {
+  try {
+    const identifier = getCartIdentifier(req);
+
+    const cart = await Cart.findOne(identifier).populate("items.product");
+    if (!cart) return res.json({ message: "Cart is empty" });
+
+    const total = cart.items.reduce((sum, i) => sum + i.price, 0);
+
+    res.json({
+      cart: cart.items.map((i) => ({
+        image: i.product.images && i.product.images.length > 0
+             ? i.product.images[0].url  // first image
+             : "/uploads/default.jpg",  // fallback
+        name: i.product.name,
+        price: i.product.price,
+        quantity: i.quantity,
+        total: i.price,
+        itemId: i._id,
+      })),
+      total,
+      actions: {
+        canUpdate: true,
+        canRemove: true,
+        canClear: true,
+        canContinueShopping: true,
+        canProceedToCheckout: !!req.user,
+      },
+    });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+// ✏️ Update item qty
+exports.updateItem = async (req, res) => {
+  try {
+    const { itemId } = req.params;
+    const { quantity } = req.body;
+    const identifier = getCartIdentifier(req);
+
+    let cart = await Cart.findOne(identifier);
+    if (!cart) return res.status(404).json({ message: "Cart not found" });
+
+    const item = cart.items.id(itemId);
+    if (!item) return res.status(404).json({ message: "Item not found" });
+
+    const book = await Book.findById(item.product);
+    item.quantity = quantity;
+    item.price = book.price * quantity;
+
+    await cart.save();
+    res.json({ message: "Item updated", cart });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+// ❌ Remove item
+exports.removeItem = async (req, res) => {
+  try {
+    const { itemId } = req.params;
+    const identifier = getCartIdentifier(req);
+
+    let cart = await Cart.findOne(identifier);
+    if (!cart) return res.status(404).json({ message: "Cart not found" });
+
+    cart.items = cart.items.filter((i) => i._id.toString() !== itemId);
+
+    await cart.save();
+    res.json({ message: "Item removed", cart });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+// 🧹 Clear cart
+exports.clearCart = async (req, res) => {
+  try {
+    const identifier = getCartIdentifier(req);
+
+    let cart = await Cart.findOne(identifier);
+    if (!cart) return res.status(404).json({ message: "Cart not found" });
+
+    cart.items = [];
+    await cart.save();
+
+    res.json({ message: "Cart cleared" });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
