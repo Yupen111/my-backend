@@ -40,10 +40,6 @@ app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
 
 
 
-//hello world   
-//helo world uuhlgh
-
-// hello world
 
 
 
